@@ -1,62 +1,124 @@
 <!DOCTYPE html>
 <html>
 	<head>
-		<title>SuperCalc</title>
-		<script src='OmegaNum.js'></script>
-		<script src='main.js'></script>
+		<title>SuperCalc v2.0</title>
 		<style>
-			p {
-				display: inline-block;
-				width: auto;
-				padding: 0;
-				margin: 5px;
-				height: 10px;
-			}
-			td input {
-				width: 40px;
-				height: 40px;
+			button {
+				width: 50px;
+				height: 50px;
 				font-size: 20px;
 			}
+			
+			#disp {
+				height: 40px;
+			}
 		</style>
+		
+		<script src='OmegaNum.js'></script>
+		<script>
+			let input0 = '';
+			let input1 = '';
+			let writingTo = 0;
+			let operation = '';
+			let output = '';
+			let clearOnNext = false;
+			
+			function updateDisp() {
+				$('disp').innerHTML = input0 + (input1 == '' ? '' : operation) + input1 + (output == '' ? '' : '=') + output;
+			}
+			
+			function clear() {
+				input0 = '';
+				input1 = '';
+				writingTo = 0;
+				operation = '';
+				output = '';
+				clearOnNext = false;
+				updateDisp();
+			}
+			
+			function back() {
+				if (writingTo == 0) input0 = input0.substring(0, input0.length - 1);
+				else input1 = input1.substring(0, input1.length - 1);
+				updateDisp();
+			}
+			
+			let $ = id => document.getElementById(id);
+			
+			function add(value) {
+				if (writingTo == 0) input0 += value;
+				else input1 += value;
+				updateDisp();
+			}
+			
+			function changeOperation(value) {
+				operation = value;
+				writingTo = 1;
+				updateDisp();
+			}
+			
+			function calc() {
+				if (input0 == '') input0 = '0';
+				if (input1 == '') input1 = '1';
+				if (operation == '+') output = OmegaNum.add(input0, input1).toString();
+				else if (operation == '-') output = OmegaNum.sub(input0, input1).toString();
+				else if (operation == '*') output = OmegaNum.mul(input0, input1).toString();
+				else if (operation == '/') output = OmegaNum.div(input0, input1).toString();
+				else if (operation == '^') output = OmegaNum.pow(input0, input1).toString();
+				else if (operation == '^^') output = OmegaNum.tetr(input0, input1).toString();
+				else output = input0;
+				updateDisp();
+				clearOnNext = true;
+			}
+			
+			function input(value) {
+				if (clearOnNext) clear();
+				if (value == 'C') clear();
+				else if (value == '<') back();
+				else if (value == '=') calc();
+				else if (value == '+' || value == '-' || value == '*' || value == '/' || value == '^' || value == '^^') changeOperation(value);
+				else add(value);
+			}
+		</script>
 	</head>
-	
 	<body>
-		<form name='form'>
-			<p id='in1'></p>
-			<p id='op'></p><p id='in2'></p>
-			<p id='eq'></p><p id='out'></p>
-			<table>
-				<tr>
-					<td><input type='button' value='C' onclick='c()'></td>
-					<td><input type='button' value='<' onclick='back()'></td>
-					<td><input type='button' value='+' onclick='op("add")'></td>
-					<td><input type='button' value='-' onclick='op("sub")'></td>
-				</tr>
-				<tr>
-					<td><input type='button' value='7' onclick='insert(7)'></td>
-					<td><input type='button' value='8' onclick='insert(8)'></td>
-					<td><input type='button' value='9' onclick='insert(9)'></td>
-					<td><input type='button' value='*' onclick='op("mul")'></td>
-				</tr>
-				<tr>
-					<td><input type='button' value='4' onclick='insert(4)'></td>
-					<td><input type='button' value='5' onclick='insert(5)'></td>
-					<td><input type='button' value='6' onclick='insert(6)'></td>
-					<td><input type='button' value='/' onclick='op("div")'></td>
-				</tr>
-				<tr>
-					<td><input type='button' value='1' onclick='insert(1)'></td>
-					<td><input type='button' value='2' onclick='insert(2)'></td>
-					<td><input type='button' value='3' onclick='insert(3)'></td>
-					<td><input type='button' value='^' onclick='op("pow")'></td>
-				</tr>
-				<tr>
-					<td><input type='button' value='0' onclick='insert(0)'></td>
-					<td><input type='button' value='.' onclick='insert(.)'></td>
-					<td><input type='button' value='=' onclick='equals()'></td>
-					<td><input type='button' value='^^' onclick='op("tetr")'></td>
-				</tr>
-			</table>
-		</form>
+		<div id='app'>
+			<div id='disp'>
+			</div>
+			<div id='in'>
+				<table>
+					<tr>
+						<td><button onclick='input("C")'>C</button></td>
+						<td><button onclick='input("<")'><</button></td>
+						<td><button onclick='input("+")'>+</button></td>
+						<td><button onclick='input("-")'>-</button></td>
+					</tr>
+					<tr>
+						<td><button onclick='input("7")'>7</button></td>
+						<td><button onclick='input("8")'>8</button></td>
+						<td><button onclick='input("9")'>9</button></td>
+						<td><button onclick='input("*")'>&times;</button></td>
+					</tr>
+					<tr>
+						<td><button onclick='input("4")'>4</button></td>
+						<td><button onclick='input("5")'>5</button></td>
+						<td><button onclick='input("6")'>6</button></td>
+						<td><button onclick='input("/")'>&divide;</button></td>
+					</tr>
+					<tr>
+						<td><button onclick='input("1")'>1</button></td>
+						<td><button onclick='input("2")'>2</button></td>
+						<td><button onclick='input("3")'>3</button></td>
+						<td><button onclick='input("^")'>^</button></td>
+					</tr>
+					<tr>
+						<td><button onclick='input("0")'>0</button></td>
+						<td><button onclick='input(".")'>.</button></td>
+						<td><button onclick='input("=")'>=</button></td>
+						<td><button onclick='input("^^")'>^^</button></td>
+					</tr>
+				</table>
+			</div>
+		</div>
 	</body>
 </html>
