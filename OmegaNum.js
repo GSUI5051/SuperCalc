@@ -7,25 +7,6 @@
   // --  EDITABLE DEFAULTS  -- //
     var OmegaNum = {
 
-      // The rounding mode used by default by `toInteger`, `toDecimalPlaces`, `toExponential`,
-      // `toFixed`, `toPrecision` and `toSignificantDigits`.
-      //
-      // ROUND_UP         0 Away from zero.
-      // ROUND_DOWN       1 Towards zero.
-      // ROUND_CEIL       2 Towards +Infinity.
-      // ROUND_FLOOR      3 Towards -Infinity.
-      // ROUND_HALF_UP    4 Towards nearest neighbour. If equidistant, up.
-      // ROUND_HALF_DOWN  5 Towards nearest neighbour. If equidistant, down.
-      // ROUND_HALF_EVEN  6 Towards nearest neighbour. If equidistant, towards even neighbour.
-      // ROUND_HALF_CEIL  7 Towards nearest neighbour. If equidistant, towards +Infinity.
-      // ROUND_HALF_FLOOR 8 Towards nearest neighbour. If equidistant, towards -Infinity.
-      //
-      // E.g.
-      // `OmegaNum.rounding = 4;`
-      // `OmegaNum.rounding = OmegaNum.ROUND_HALF_UP;`
-      // Unused
-      rounding: 4,                           // 0 to 8
-
       // The maximum number of arrows accepted in operation.
       // It will warn and then return Infinity if exceeded.
       // This is to prevent loops to not be breaking, and also to prevent memory leaks.
@@ -33,6 +14,12 @@
       // It is not recommended to make this number too big.
       // `OmegaNum.maxArrow = 1000;`
       maxArrow: 1e3,
+
+      // Specify what format is used when serializing for JSON.stringify
+      // 
+      // JSON   0 JSON object
+      // STRING 1 String
+      serializeMode: 0,
       
       // Level of debug information printed in console
       // 
@@ -51,7 +38,7 @@
     omegaNumError = "[OmegaNumError] ",
     invalidArgument = omegaNumError + "Invalid argument: ",
 
-    isOmegaNum = /^[-\+]*(Infinity|NaN|(10(\^+|\{[1-9]\d*\})|\(10(\^+|\{[1-9]\d*\})\)\^[1-9]\d* )*(([1-9]\d*(\.\d*)?)?([Ee][-\+]*))*(0|[1-9]\d*(\.\d*)?))$/,
+    isOmegaNum = /^[-\+]*(Infinity|NaN|(10(\^+|\{[1-9]\d*\})|\(10(\^+|\{[1-9]\d*\})\)\^[1-9]\d* )*((\d+(\.\d*)?|\d*\.\d+)?([Ee][-\+]*))*(0|\d+(\.\d*)?|\d*\.\d+))$/,
 
     MAX_SAFE_INTEGER = 9007199254740991,
     MAX_E = Math.log10(MAX_SAFE_INTEGER), //15.954589770191003
@@ -59,7 +46,9 @@
     // OmegaNum.prototype object
     P={},
     // OmegaNum static object
-    Q={};
+    Q={},
+    // OmegaNum constants
+    R={};
 
   // OmegaNum prototype methods
 
@@ -89,7 +78,11 @@
    *  isNaN
    *  isNegative                isneg
    *  isPositive                ispos
+   *  iteratedexp
+   *  iteratedlog
    *  lambertw
+   *  layeradd
+   *  layeradd10
    *  lessThan                  lt
    *  lessThanOrEqualTo         lte
    *  logarithm                 logBase
@@ -97,6 +90,7 @@
    *  modulo                    mod
    *  naturalLogarithm          ln        log
    *  negated                   neg
+   *  notEquals                 neq
    *  pentate                   pent
    *  plus                      add
    *  reciprocate               rec
@@ -109,12 +103,35 @@
    *  sumGeometricSeries
    *  times                     mul
    *  tetrate                   tetr
+   *  toExponential
+   *  toFixed
    *  toHyperE
    *  toJSON
    *  toNumber
    *  toPower                   pow
+   *  toPrecision
    *  toString
+   *  toStringWithDecimalPlaces
+   *  valueOf
    */
+  R.ZERO=0;
+  R.ONE=1;
+  R.E=Math.E;
+  R.LN2=Math.LN2;
+  R.LN10=Math.LN10;
+  R.LOG2E=Math.LOG2E;
+  R.LOG10E=Math.LOG10E;
+  R.PI=Math.PI;
+  R.SQRT1_2=Math.SQRT1_2;
+  R.SQRT2=Math.SQRT2;
+  R.MAX_SAFE_INTEGER=MAX_SAFE_INTEGER;
+  R.MIN_SAFE_INTEGER=Number.MIN_SAFE_INTEGER;
+  R.NaN=Number.NaN;
+  R.NEGATIVE_INFINITY=Number.NEGATIVE_INFINITY;
+  R.POSITIVE_INFINITY=Number.POSITIVE_INFINITY;
+  R.E_MAX_SAFE_INTEGER="e"+MAX_SAFE_INTEGER;
+  R.EE_MAX_SAFE_INTEGER="ee"+MAX_SAFE_INTEGER;
+  R.TETRATED_MAX_SAFE_INTEGER="10^^"+MAX_SAFE_INTEGER;
   P.absoluteValue=P.abs=function(){
     var x=this.clone();
     x.sign=1;
@@ -132,7 +149,7 @@
     return new OmegaNum(x).neg();
   };
   P.compareTo=P.cmp=function (other){
-    other=new OmegaNum(other);
+    if (!(other instanceof OmegaNum)) other=new OmegaNum(other);
     if (isNaN(this.array[0])||isNaN(other.array[0])) return NaN;
     if (this.array[0]==Infinity&&other.array[0]!=Infinity) return this.sign;
     if (this.array[0]!=Infinity&&other.array[0]==Infinity) return -other.sign;
@@ -189,6 +206,12 @@
   Q.equalsTo=Q.equal=Q.eq=function (x,y){
     return new OmegaNum(x).eq(y);
   };
+  P.notEqualsTo=P.notEqual=P.neq=function (other){
+    return this.cmp(other)!==0;
+  };
+  Q.notEqualsTo=Q.notEqual=Q.neq=function (x,y){
+    return new OmegaNum(x).neq(y);
+  };
   P.minimum=P.min=function (other){
     return this.lt(other)?this.clone():new OmegaNum(other);
   };
@@ -202,13 +225,13 @@
     return new OmegaNum(x).max(y);
   };
   P.isPositive=P.ispos=function (){
-    return this.gt(0);
+    return this.gt(OmegaNum.ZERO);
   };
   Q.isPositive=Q.ispos=function (x){
     return new OmegaNum(x).ispos();
   };
   P.isNegative=P.isneg=function (){
-    return this.lt(0);
+    return this.lt(OmegaNum.ZERO);
   };
   Q.isNegative=Q.isneg=function (x){
     return new OmegaNum(x).isneg();
@@ -233,7 +256,7 @@
   };
   P.isInteger=P.isint=function (){
     if (this.sign==-1) return this.abs().isint();
-    if (this.gt(MAX_SAFE_INTEGER)) return true;
+    if (this.gt(OmegaNum.MAX_SAFE_INTEGER)) return true;
     return Number.isInteger(this.toNumber());
   };
   Q.isInteger=Q.isint=function (x){
@@ -266,15 +289,15 @@
     if (OmegaNum.debug>=OmegaNum.NORMAL) console.log(this+"+"+other);
     if (x.sign==-1) return x.neg().add(other.neg()).neg();
     if (other.sign==-1) return x.sub(other.neg());
-    if (x.eq(0)) return other;
-    if (other.eq(0)) return x;
-    if (x.isNaN()||other.isNaN()||x.isInfinite()&&other.isInfinite()&&x.eq(other.neg())) return new OmegaNum(NaN);
+    if (x.eq(OmegaNum.ZERO)) return other;
+    if (other.eq(OmegaNum.ZERO)) return x;
+    if (x.isNaN()||other.isNaN()||x.isInfinite()&&other.isInfinite()&&x.eq(other.neg())) return OmegaNum.NaN.clone();
     if (x.isInfinite()) return x;
     if (other.isInfinite()) return other;
     var p=x.min(other);
     var q=x.max(other);
     var t;
-    if (q.gt("e"+MAX_SAFE_INTEGER)||q.div(p).gt(MAX_SAFE_INTEGER)){
+    if (q.gt(OmegaNum.E_MAX_SAFE_INTEGER)||q.div(p).gt(OmegaNum.MAX_SAFE_INTEGER)){
       t=q;
     }else if (!q.array[1]){
       t=new OmegaNum(x.toNumber()+other.toNumber());
@@ -294,16 +317,16 @@
     if (OmegaNum.debug>=OmegaNum.NORMAL) console.log(x+"-"+other);
     if (x.sign==-1) return x.neg().sub(other.neg()).neg();
     if (other.sign==-1) return x.add(other.neg());
-    if (x.eq(other)) return new OmegaNum(0);
-    if (other.eq(0)) return x;
-    if (x.isNaN()||other.isNaN()||x.isInfinite()&&other.isInfinite()) return new OmegaNum(NaN);
+    if (x.eq(other)) return OmegaNum.ZERO.clone();
+    if (other.eq(OmegaNum.ZERO)) return x;
+    if (x.isNaN()||other.isNaN()||x.isInfinite()&&other.isInfinite()) return OmegaNum.NaN.clone();
     if (x.isInfinite()) return x;
     if (other.isInfinite()) return other.neg();
     var p=x.min(other);
     var q=x.max(other);
     var n=other.gt(x);
     var t;
-    if (q.gt("e"+MAX_SAFE_INTEGER)||q.div(p).gt(MAX_SAFE_INTEGER)){
+    if (q.gt(OmegaNum.E_MAX_SAFE_INTEGER)||q.div(p).gt(OmegaNum.MAX_SAFE_INTEGER)){
       t=q;
       t=n?t.neg():t;
     }else if (!q.array[1]){
@@ -325,13 +348,13 @@
     if (OmegaNum.debug>=OmegaNum.NORMAL) console.log(x+"*"+other);
     if (x.sign*other.sign==-1) return x.abs().mul(other.abs()).neg();
     if (x.sign==-1) return x.abs().mul(other.abs());
-    if (x.isNaN()||other.isNaN()||x.eq(0)&&other.isInfinite()||x.isInfinite()&&other.abs().eq(0)) return new OmegaNum(NaN);
-    if (other.eq(0)) return new OmegaNum(0);
-    if (other.eq(1)) return x.clone();
+    if (x.isNaN()||other.isNaN()||x.eq(OmegaNum.ZERO)&&other.isInfinite()||x.isInfinite()&&other.abs().eq(OmegaNum.ZERO)) return OmegaNum.NaN.clone();
+    if (other.eq(OmegaNum.ZERO)) return OmegaNum.ZERO.clone();
+    if (other.eq(OmegaNum.ONE)) return x.clone();
     if (x.isInfinite()) return x;
     if (other.isInfinite()) return other;
-    if (x.max(other).gt("ee"+MAX_SAFE_INTEGER)) return x.max(other);
-    var n=x*other;
+    if (x.max(other).gt(OmegaNum.EE_MAX_SAFE_INTEGER)) return x.max(other);
+    var n=x.toNumber()*other.toNumber();
     if (n<=MAX_SAFE_INTEGER) return new OmegaNum(n);
     return OmegaNum.pow(10,x.log10().add(other.log10()));
   };
@@ -344,14 +367,14 @@
     if (OmegaNum.debug>=OmegaNum.NORMAL) console.log(x+"/"+other);
     if (x.sign*other.sign==-1) return x.abs().div(other.abs()).neg();
     if (x.sign==-1) return x.abs().div(other.abs());
-    if (x.isNaN()||other.isNaN()||x.isInfinite()&&other.isInfinite()||x.eq(0)&&other.eq(0)) return new OmegaNum(NaN);
-    if (other.eq(0)) return new OmegaNum(Infinity);
-    if (other.eq(1)) return x.clone();
-    if (x.eq(other)) return new OmegaNum(1);
+    if (x.isNaN()||other.isNaN()||x.isInfinite()&&other.isInfinite()||x.eq(OmegaNum.ZERO)&&other.eq(OmegaNum.ZERO)) return OmegaNum.NaN.clone();
+    if (other.eq(OmegaNum.ZERO)) return OmegaNum.POSITIVE_INFINITY.clone();
+    if (other.eq(OmegaNum.ONE)) return x.clone();
+    if (x.eq(other)) return OmegaNum.ONE.clone();
     if (x.isInfinite()) return x;
-    if (other.isInfinite()) return new OmegaNum(0);
-    if (x.max(other).gt("ee"+MAX_SAFE_INTEGER)) return x.gt(other)?x.clone():new OmegaNum(0);
-    var n=x/other;
+    if (other.isInfinite()) return OmegaNum.ZERO.clone();
+    if (x.max(other).gt(OmegaNum.EE_MAX_SAFE_INTEGER)) return x.gt(other)?x.clone():OmegaNum.ZERO.clone();
+    var n=x.toNumber()/other.toNumber();
     if (n<=MAX_SAFE_INTEGER) return new OmegaNum(n);
     var pw=OmegaNum.pow(10,x.log10().sub(other.log10()));
     var fp=pw.floor();
@@ -363,8 +386,8 @@
   };
   P.reciprocate=P.rec=function (){
     if (OmegaNum.debug>=OmegaNum.NORMAL) console.log(this+"^-1");
-    if (this.isNaN()||this.eq(0)) return new OmegaNum(NaN);
-    if (this.abs().gt("2e323")) return new OmegaNum(0);
+    if (this.isNaN()||this.eq(OmegaNum.ZERO)) return OmegaNum.NaN.clone();
+    if (this.abs().gt("2e323")) return OmegaNum.ZERO.clone();
     return new OmegaNum(1/this);
   };
   Q.reciprocate=Q.rec=function (x){
@@ -372,9 +395,9 @@
   };
   P.modular=P.mod=function (other){
     other=new OmegaNum(other);
-    if (other.eq(0)) return new OmegaNum(0);
-    if (this.sign*other.sign<0) return this.abs().mod(other.abs()).neg();
-    if (this.sign<0) return this.abs().mod(other.abs());
+    if (other.eq(OmegaNum.ZERO)) return OmegaNum.ZERO.clone();
+    if (this.sign*other.sign==-1) return this.abs().mod(other.abs()).neg();
+    if (this.sign==-1) return this.abs().mod(other.abs());
     return this.sub(this.div(other).floor().mul(other));
   };
   Q.modular=Q.mod=function (x,y){
@@ -419,9 +442,9 @@
   //from HyperCalc source code
   P.gamma=function (){
     var x=this.clone();
-    if (x.gt("10^^"+MAX_SAFE_INTEGER)) return x;
-    if (x.gt("e"+MAX_SAFE_INTEGER)) return OmegaNum.exp(x);
-    if (x.gt(MAX_SAFE_INTEGER)) return OmegaNum.exp(OmegaNum.mul(x,OmegaNum.ln(x).sub(1)));
+    if (x.gt(OmegaNum.TETRATED_MAX_SAFE_INTEGER)) return x;
+    if (x.gt(OmegaNum.E_MAX_SAFE_INTEGER)) return OmegaNum.exp(x);
+    if (x.gt(OmegaNum.MAX_SAFE_INTEGER)) return OmegaNum.exp(OmegaNum.mul(x,OmegaNum.ln(x).sub(1)));
     var n=x.array[0];
     if (n>1){
       if (n<24) return new OmegaNum(f_gamma(x.sign*n));
@@ -461,7 +484,7 @@
   P.factorial=P.fact=function (){
     var x=this.clone();
     var f=OmegaNum.factorials;
-    if (x.lt(0)||!x.isint()) return x.add(1).gamma();
+    if (x.lt(OmegaNum.ZERO)||!x.isint()) return x.add(1).gamma();
     if (x.lte(170)) return new OmegaNum(f[+x]);
     var errorFixer=1;
     var e=+x;
@@ -470,7 +493,7 @@
     if (e<50000) e+=-139/51840*Math.pow(e,3);
     if (e<1e7) e+=1/288*Math.pow(e,2);
     if (e<1e20) e+=1/12*e;
-    return x.div(new OmegaNum(Math.E)).pow(x).mul(x.mul(new OmegaNum(Math.PI)).mul(2).sqrt()).times(errorFixer);
+    return x.div(OmegaNum.E).pow(x).mul(x.mul(OmegaNum.PI).mul(2).sqrt()).times(errorFixer);
   };
   Q.factorial=Q.fact=function (x){
     return new OmegaNum(x).fact();
@@ -478,28 +501,28 @@
   P.toPower=P.pow=function (other){
     other=new OmegaNum(other);
     if (OmegaNum.debug>=OmegaNum.NORMAL) console.log(this+"^"+other);
-    if (other.eq(0)) return new OmegaNum(1);
-    if (other.eq(1)) return this.clone();
-    if (other.lt(0)) return this.pow(other.neg()).rec();
-    if (this.lt(0)&&other.isint()){
-      if (other.mod(2).lt(1)) return this.abs().pow(other);
+    if (other.eq(OmegaNum.ZERO)) return OmegaNum.ONE.clone();
+    if (other.eq(OmegaNum.ONE)) return this.clone();
+    if (other.lt(OmegaNum.ZERO)) return this.pow(other.neg()).rec();
+    if (this.lt(OmegaNum.ZERO)&&other.isint()){
+      if (other.mod(2).lt(OmegaNum.ONE)) return this.abs().pow(other);
       return this.abs().pow(other).neg();
     }
-    if (this.lt(0)) return new OmegaNum(NaN);
-    if (this.eq(1)) return new OmegaNum(1);
-    if (this.eq(0)) return new OmegaNum(0);
-    if (this.max(other).gt("10^^"+MAX_SAFE_INTEGER)) return this.max(other);
+    if (this.lt(OmegaNum.ZERO)) return OmegaNum.NaN.clone();
+    if (this.eq(OmegaNum.ONE)) return OmegaNum.ONE.clone();
+    if (this.eq(OmegaNum.ZERO)) return OmegaNum.ZERO.clone();
+    if (this.max(other).gt(OmegaNum.TETRATED_MAX_SAFE_INTEGER)) return this.max(other);
     if (this.eq(10)){
-      if (other.gt(0)){
+      if (other.gt(OmegaNum.ZERO)){
         other.array[1]=(other.array[1]+1)||1;
         other.standardize();
         return other;
       }else{
-        return new OmegaNum(Math.pow(10,other));
+        return new OmegaNum(Math.pow(10,other.toNumber()));
       }
     }
-    if (other.lt(1)) return this.root(other.rec());
-    var n=Math.pow(this,other);
+    if (other.lt(OmegaNum.ONE)) return this.root(other.rec());
+    var n=Math.pow(this.toNumber(),other.toNumber());
     if (n<=MAX_SAFE_INTEGER) return new OmegaNum(n);
     return OmegaNum.pow(10,this.log10().mul(other));
   };
@@ -527,14 +550,14 @@
   P.root=function (other){
     other=new OmegaNum(other);
     if (OmegaNum.debug>=OmegaNum.NORMAL) console.log(this+"root"+other);
-    if (other.eq(1)) return this.clone();
-    if (other.lt(0)) return this.root(other.neg()).rec();
-    if (other.lt(1)) return this.pow(other.rec());
-    if (this.lt(0)&&other.isint()&&other.mod(2).eq(1)) return this.neg().root(other).neg();
-    if (this.lt(0)) return new OmegaNum(NaN);
-    if (this.eq(1)) return new OmegaNum(1);
-    if (this.eq(0)) return new OmegaNum(0);
-    if (this.max(other).gt("10^^"+MAX_SAFE_INTEGER)) return this.gt(other)?this.clone():new OmegaNum(0);
+    if (other.eq(OmegaNum.ONE)) return this.clone();
+    if (other.lt(OmegaNum.ZERO)) return this.root(other.neg()).rec();
+    if (other.lt(OmegaNum.ONE)) return this.pow(other.rec());
+    if (this.lt(OmegaNum.ZERO)&&other.isint()&&other.mod(2).eq(OmegaNum.ONE)) return this.neg().root(other).neg();
+    if (this.lt(OmegaNum.ZERO)) return OmegaNum.NaN.clone();
+    if (this.eq(OmegaNum.ONE)) return OmegaNum.ONE.clone();
+    if (this.eq(OmegaNum.ZERO)) return OmegaNum.ZERO.clone();
+    if (this.max(other).gt(OmegaNum.TETRATED_MAX_SAFE_INTEGER)) return this.gt(other)?this.clone():OmegaNum.ZERO.clone();
     return OmegaNum.pow(10,this.log10().div(other));
   };
   Q.root=function (x,y){
@@ -543,11 +566,11 @@
   P.generalLogarithm=P.log10=function (){
     var x=this.clone();
     if (OmegaNum.debug>=OmegaNum.NORMAL) console.log("log"+this);
-    if (x.lt(0)) return new OmegaNum(NaN);
-    if (x.eq(0)) return new OmegaNum(-Infinity);
-    if (x.lt(MAX_SAFE_INTEGER)) return new OmegaNum(Math.log10(x.toNumber()));
+    if (x.lt(OmegaNum.ZERO)) return OmegaNum.NaN.clone();
+    if (x.eq(OmegaNum.ZERO)) return OmegaNum.NEGATIVE_INFINITY.clone();
+    if (x.lte(OmegaNum.MAX_SAFE_INTEGER)) return new OmegaNum(Math.log10(x.toNumber()));
     if (!x.isFinite()) return x;
-    if (x.gt("10^^"+MAX_SAFE_INTEGER)) return x;
+    if (x.gt(OmegaNum.TETRATED_MAX_SAFE_INTEGER)) return x;
     x.array[1]--;
     return x.standardize();
   };
@@ -572,7 +595,7 @@
   //from https://math.stackexchange.com/a/465183
   //The evaluation can become inaccurate very close to the branch point
   var f_lambertw=function (z,tol){
-    if (tol==undefined) tol=1e-10;
+    if (tol===undefined) tol=1e-10;
     var w;
     var wn;
     if (!Number.isFinite(z)) return z;
@@ -593,7 +616,7 @@
   //at ``-1/e``. In some corner cases, `lambertw` might currently
   //fail to converge, or can end up on the wrong branch.
   var d_lambertw=function (z,tol){
-    if (tol==undefined) tol=1e-10;
+    if (tol===undefined) tol=1e-10;
     z=new OmegaNum(z);
     var w;
     var ew, wewz, wn;
@@ -609,7 +632,7 @@
     for (var i=0;i<100;++i){
       ew=OmegaNum.exp(-w);
       wewz=w.sub(z.mul(ew));
-      wn=w.sub(wewz.div(w.add(1).sub((w.add(2)).mul(wewz).div((OmegaNum.mul(2,w).add(2))))));
+      wn=w.sub(wewz.div(w.add(OmegaNum.ONE).sub((w.add(2)).mul(wewz).div((OmegaNum.mul(2,w).add(2))))));
       if (OmegaNum.abs(wn.sub(w)).lt(OmegaNum.abs(wn).mul(tol))) return wn;
       w = wn;
     }
@@ -623,12 +646,12 @@
     var x=this.clone();
     if (x.isNaN()) return x;
     if (x.lt(-0.3678794411710499)) throw Error("lambertw is unimplemented for results less than -1, sorry!");
-    if (x.gt("10^^"+MAX_SAFE_INTEGER)) return x;
-    if (x.gt("ee"+MAX_SAFE_INTEGER)){
+    if (x.gt(OmegaNum.TETRATED_MAX_SAFE_INTEGER)) return x;
+    if (x.gt(OmegaNum.EE_MAX_SAFE_INTEGER)){
       x.array[1]--;
       return x;
     }
-    if (x.gt(MAX_SAFE_INTEGER)) return d_lambertw(x);
+    if (x.gt(OmegaNum.MAX_SAFE_INTEGER)) return d_lambertw(x);
     else return new OmegaNum(f_lambertw(x.sign*x.array[0]));
   };
   Q.lambertw=function (x){
@@ -636,78 +659,131 @@
   };
   //end break_eternity.js excerpt
   //Uses linear approximations for real height
-  P.tetrate=P.tetr=function (other){
+  P.tetrate=P.tetr=function (other,payload){
+    if (payload===undefined) payload=OmegaNum.ONE;
     var t=this.clone();
     other=new OmegaNum(other);
+    payload=new OmegaNum(payload);
+    if (payload.neq(OmegaNum.ONE)) other=other.add(payload.slog(t));
     if (OmegaNum.debug>=OmegaNum.NORMAL) console.log(t+"^^"+other);
+    var negln;
+    if (t.isNaN()||other.isNaN()||payload.isNaN()) return OmegaNum.NaN.clone();
     if (other.isInfinite()&&other.sign>0){
-      if (this.gt(Math.pow(Math.E,1/Math.E))) return new OmegaNum(Infinity);
+      if (t.gte(Math.exp(1/Math.E))) return OmegaNum.POSITIVE_INFINITY.clone();
       //Formula for infinite height power tower.
-      var negln = t.ln().neg();
+      negln = t.ln().neg();
       return negln.lambertw().div(negln);
     }
-    if (other.lte(-2)) return new OmegaNum(NaN);
-    if (t.eq(0)){
-      if (other.eq(0)) return new OmegaNum(NaN);
-      if (other.mod(2).eq(0)) return new OmegaNum(0);
-      return new OmegaNum(1);
+    if (other.lte(-2)) return OmegaNum.NaN.clone();
+    if (t.eq(OmegaNum.ZERO)){
+      if (other.eq(OmegaNum.ZERO)) return OmegaNum.NaN.clone();
+      if (other.mod(2).eq(OmegaNum.ZERO)) return OmegaNum.ZERO.clone();
+      return OmegaNum.ONE.clone();
     }
-    if (t.eq(1)){
-      if (other.eq(-1)) return new OmegaNum(NaN);
-      return new OmegaNum(1);
+    if (t.eq(OmegaNum.ONE)){
+      if (other.eq(OmegaNum.ONE.neg())) return OmegaNum.NaN.clone();
+      return OmegaNum.ONE.clone();
     }
-    if (other.eq(-1)) return new OmegaNum(0);
-    if (other.eq(0)) return new OmegaNum(1);
-    if (other.eq(1)) return t;
+    if (other.eq(OmegaNum.ONE.neg())) return OmegaNum.ZERO.clone();
+    if (other.eq(OmegaNum.ZERO)) return OmegaNum.ONE.clone();
+    if (other.eq(OmegaNum.ONE)) return t;
     if (other.eq(2)) return t.pow(t);
     if (t.eq(2)){
       if (other.eq(3)) return new OmegaNum(16);
       if (other.eq(4)) return new OmegaNum(65536);
     }
-    if (t.max(other).gt("10^^^"+MAX_SAFE_INTEGER)) return t.max(other);
-    var r;
-    if (other.gt(MAX_SAFE_INTEGER)){
-      if (t.gt("10^^"+MAX_SAFE_INTEGER)){
-        r=t.clone();
-        r.array[2]--;
-        var j=r.add(other);
-        j.array[2]=(j.array[2]||0)+1;
-        j.standardize();
-        return j;
+    var m=t.max(other);
+    if (m.gt("10^^^"+MAX_SAFE_INTEGER)) return m;
+    if (m.gt(OmegaNum.TETRATED_MAX_SAFE_INTEGER)||other.gt(OmegaNum.MAX_SAFE_INTEGER)){
+      if (this.lt(Math.exp(1/Math.E))){
+        negln = t.ln().neg();
+        return negln.lambertw().div(negln);
       }
-      other.array[2]=(other.array[2]||0)+1;
-      other.standardize();
-      return other;
+      var j=t.slog(10).add(other);
+      j.array[2]=(other.array[2]||0)+1;
+      j.standardize();
+      return j;
     }
     var y=other.toNumber();
     var f=Math.floor(y);
-    r=OmegaNum.pow(10,y-f);
-    for (var i=0;f!==0&&r.lt("e"+MAX_SAFE_INTEGER)&&i<100;++i){
+    var r=t.pow(y-f);
+    var l=OmegaNum.NaN;
+    for (var i=0,m=OmegaNum.E_MAX_SAFE_INTEGER;f!==0&&r.lt(m)&&i<100;++i){
       if (f>0){
         r=t.pow(r);
+        if (l.eq(r)){
+          f=0;
+          break;
+        }
+        l=r;
         --f;
       }else{
         r=r.logBase(t);
+        if (l.eq(r)){
+          f=0;
+          break;
+        }
+        l=r;
+        ++f;
       }
     }
-    if (i==100) f=0;
+    if (i==100||this.lt(Math.exp(1/Math.E))) f=0;
     r.array[1]=(r.array[1]+f)||f;
     r.standardize();
     return r;
   };
-  Q.tetrate=Q.tetr=function (x,y){
-    return new OmegaNum(x).tetr(y);
+  Q.tetrate=Q.tetr=function (x,y,payload){
+    return new OmegaNum(x).tetr(y,payload);
   };
+  //Implementation of functions from break_eternity.js
+  P.iteratedexp=function (other,payload){
+    return this.tetr(other,payload);
+  };
+  Q.iteratedexp=function (x,y,payload){
+    return new OmegaNum(x).iteratedexp(other,payload);
+  };
+  //This implementation is highly inaccurate and slow, and probably be given custom code
+  P.iteratedlog=function (base,other){
+    if (base===undefined) base=10;
+    if (other===undefined) other=OmegaNum.ONE.clone();
+    var t=this.clone();
+    if (other.eq(ExpantaNum.ZERO)) return t;
+    if (other.eq(ExpantaNum.ONE)) return t.logBase(base);
+    base=new OmegaNum(base);
+    other=new OmegaNum(other);
+    return base.tetr(t.slog(base).sub(other));
+  };
+  Q.iteratedlog=function (x,y,z){
+    return new OmegaNum(x).iteratedlog(y,z);
+  };
+  P.layeradd=function (other,base){
+    if (base===undefined) base=10;
+    if (other===undefined) other=OmegaNum.ONE.clone();
+    var t=this.clone();
+    base=new OmegaNum(base);
+    other=new OmegaNum(other);
+    return base.tetr(t.slog(base).add(other));
+  };
+  Q.layeradd=function (x,y,z){
+    return new OmegaNum(x).layeradd(y,z);
+  };
+  P.layeradd10=function (other){
+    return this.layeradd(other);
+  };
+  Q.layeradd10=function (x,y){
+    return new OmegaNum(x).layeradd10(y);
+  };
+  //End implementation from break_eternity.js
   //All of these are from Patashu's break_eternity.js
   //The super square-root function - what number, tetrated to height 2, equals this?
   //Other sroots are possible to calculate probably through guess and check methods, this one is easy though.
   //https://en.wikipedia.org/wiki/Tetration#Super-root
   P.ssqrt=P.ssrt=function (){
     var x=this.clone();
-    if (x.lt(Math.exp(-1/Math.E))) return new OmegaNum(NaN);
+    if (x.lt(Math.exp(-1/Math.E))) return OmegaNum.NaN.clone();
     if (!x.isFinite()) return x;
-    if (x.gt("10^^"+MAX_SAFE_INTEGER)) return x;
-    if (x.gt("ee"+MAX_SAFE_INTEGER)){
+    if (x.gt(OmegaNum.TETRATED_MAX_SAFE_INTEGER)) return x;
+    if (x.gt(OmegaNum.EE_MAX_SAFE_INTEGER)){
       x.array[1]--;
       return x;
     }
@@ -722,22 +798,30 @@
   //https://en.wikipedia.org/wiki/Super-logarithm
   P.slog=function (base){
     if (base===undefined) base=10;
-    if (this.mag<0) return new OmegaNum(-1);
     var x=new OmegaNum(this);
     base=new OmegaNum(base);
-    if (x.isNaN()||base.isNaN()||x.isInfinite()&&base.isInfinite()) return new OmegaNum(NaN);
+    if (x.isNaN()||base.isNaN()||x.isInfinite()&&base.isInfinite()) return OmegaNum.NaN.clone();
     if (x.isInfinite()) return x;
-    if (base.isInfinite()) return new OmegaNum(0);
-    if (x.eq(1)) return new OmegaNum(0);
-    if (x.eq(base)) return new OmegaNum(1);
+    if (base.isInfinite()) return OmegaNum.ZERO.clone();
+    if (x.lt(OmegaNum.ZERO)) return OmegaNum.ONE.neg();
+    if (x.eq(OmegaNum.ONE)) return OmegaNum.ZERO.clone();
+    if (x.eq(base)) return OmegaNum.ONE.clone();
     if (base.lt(Math.exp(1/Math.E))){
       var a=OmegaNum.tetr(base,Infinity);
-      if (x.eq(a)) return new OmegaNum(Infinity);
-      if (x.gt(a)) return new OmegaNum(NaN);
+      if (x.eq(a)) return OmegaNum.POSITIVE_INFINITY.clone();
+      if (x.gt(a)) return OmegaNum.NaN.clone();
     }
-    if (x.max(base).gt("10^^"+(MAX_SAFE_INTEGER*3))){
+    if (x.max(base).gt("10^^^"+MAX_SAFE_INTEGER)){
       if (x.gt(base)) return x;
-      return new OmegaNum(0);
+      return OmegaNum.ZERO.clone();
+    }
+    if (x.max(base).gt(OmegaNum.TETRATED_MAX_SAFE_INTEGER)){
+      if (x.gt(base)){
+        x.array[2]--;
+        x.standardize();
+        return x.sub(x.array[1]);
+      }
+      return OmegaNum.ZERO.clone();
     }
     var r=0;
     var t=(x.array[1]||0)-(base.array[1]||0);
@@ -747,16 +831,17 @@
       x.array[1]=x.array[1]-l;
     }
     for (var i=0;i<100;++i){
-      if (x.lt(0)){
+      if (x.lt(OmegaNum.ZERO)){
         x=OmegaNum.pow(base,x);
         --r;
       }else if (x.lte(1)){
-        return new OmegaNum(r+Number(x)-1);
+        return new OmegaNum(r+x.toNumber()-1);
       }else{
         ++r;
         x=OmegaNum.logBase(x,base);
       }
     }
+    if (x.gt(10))
     return new OmegaNum(r);
   };
   Q.slog=function (x,y){
@@ -769,41 +854,53 @@
   Q.pentate=Q.pent=function (x,y){
     return OmegaNum.arrow(x,3,y);
   };
+  //Uses linear approximations for real height
   P.arrow=function (arrows){
     var t=this.clone();
     arrows=new OmegaNum(arrows);
-    if (!arrows.isint()||arrows.lt(0)) return function(other){return new OmegaNum(NaN);};
-    if (arrows.eq(0)) return function(other){return t.mul(other);};
-    if (arrows.eq(1)) return function(other){return t.pow(other);};
+    if (!arrows.isint()||arrows.lt(OmegaNum.ZERO)) return function(other){return OmegaNum.NaN.clone();};
+    if (arrows.eq(OmegaNum.ZERO)) return function(other){return t.mul(other);};
+    if (arrows.eq(OmegaNum.ONE)) return function(other){return t.pow(other);};
     if (arrows.eq(2)) return function(other){return t.tetr(other);};
     return function (other){
       other=new OmegaNum(other);
       if (OmegaNum.debug>=OmegaNum.NORMAL) console.log(t+"{"+arrows+"}"+other);
-      if (!other.isint()||other.lt(0)) return new OmegaNum(NaN);
-      if (other.eq(0)) return new OmegaNum(1);
-      if (other.eq(1)) return t.clone();
+      if (other.lt(OmegaNum.ZERO)) return OmegaNum.NaN.clone();
+      if (other.eq(OmegaNum.ZERO)) return OmegaNum.ONE.clone();
+      if (other.eq(OmegaNum.ONE)) return t.clone();
       if (arrows.gte(OmegaNum.maxArrow)){
         console.warn("Number too large to reasonably handle it: tried to "+arrows.add(2)+"-ate.");
-        return new OmegaNum(Infinity);
+        return OmegaNum.POSITIVE_INFINITY.clone();
       }
       if (other.eq(2)) return t.arrow(arrows-1)(t);
-      if (t.max(other).gt("10{"+arrows.add(1)+"}"+MAX_SAFE_INTEGER)) return t.max(other);
+      if (t.max(other).gt("10{"+arrows.add(OmegaNum.ONE)+"}"+MAX_SAFE_INTEGER)) return t.max(other);
       var r;
-      if (other.gt(MAX_SAFE_INTEGER)){
+      if (t.gt("10{"+arrows+"}"+MAX_SAFE_INTEGER)||other.gt(OmegaNum.MAX_SAFE_INTEGER)){
         if (t.gt("10{"+arrows+"}"+MAX_SAFE_INTEGER)){
           r=t.clone();
           r.array[arrows]--;
-          var j=r.add(other);
-          j.array[arrows]=(j.array[arrows]||0)+1;
-          j.standardize();
-          return j;
+          r.standardize();
+        }else if (t.gt("10{"+arrows.sub(OmegaNum.ONE)+"}"+MAX_SAFE_INTEGER)){
+          r=new OmegaNum(t.array[arrows.sub(OmegaNum.ONE)]);
+        }else{
+          r=OmegaNum.ZERO;
         }
-        other.array[arrows]=(other.array[arrows]||0)+1;
-        other.standardize();
-        return other;
+        var j=r.add(other);
+        j.array[arrows]=(other.array[arrows]||0)+1;
+        j.standardize();
+        return j;
       }
-      r=t.arrow(arrows-1)(t.arrow(arrows-1)(t));
-      r.array[arrows-1]=(r.array[arrows-1]+other.sub(3).toNumber())||other.sub(3).toNumber();
+      var y=other.toNumber();
+      var f=Math.floor(y);
+      r=t.arrow(arrows.sub(1))(y-f);
+      for (var i=0,m=new OmegaNum("10{"+arrows.sub(OmegaNum.ONE)+"}"+MAX_SAFE_INTEGER);f!==0&&r.lt(m)&&i<100;++i){
+        if (f>0){
+          r=t.arrow(arrows.sub(OmegaNum.ONE))(r);
+          --f;
+        }
+      }
+      if (i==100) f=0;
+      r.array[arrows.sub(OmegaNum.ONE)]=(r.array[arrows.sub(OmegaNum.ONE)]+f)||f;
       r.standardize();
       return r;
     };
@@ -819,8 +916,8 @@
   };
   Q.hyper=function (z){
     z=new OmegaNum(z);
-    if (z.eq(0)) return function(x,y){return new OmegaNum(y).eq(0)?new OmegaNum(x):new OmegaNum(x).add(1);};
-    if (z.eq(1)) return function(x,y){return OmegaNum.add(x,y);};
+    if (z.eq(OmegaNum.ZERO)) return function(x,y){return new OmegaNum(y).eq(OmegaNum.ZERO)?new OmegaNum(x):new OmegaNum(x).add(OmegaNum.ONE);};
+    if (z.eq(OmegaNum.ONE)) return function(x,y){return OmegaNum.add(x,y);};
     return function(x,y){return new OmegaNum(x).arrow(z.sub(2))(y);};
   };
   // All of these are from Patashu's break_eternity.js
@@ -835,7 +932,7 @@
     priceStart=new OmegaNum(priceStart);
     priceRatio=new OmegaNum(priceRatio);
     var actualStart = priceStart.mul(priceRatio.pow(currentOwned));
-    return OmegaNum.floor(resourcesAvailable.div(actualStart).mul(priceRatio.sub(1)).add(1).log10().div(priceRatio.log10()));
+    return OmegaNum.floor(resourcesAvailable.div(actualStart).mul(priceRatio.sub(OmegaNum.ONE)).add(OmegaNum.ONE).log10().div(priceRatio.log10()));
   };
   Q.affordArithmeticSeries = function (resourcesAvailable, priceStart, priceAdd, currentOwned) {
     /*
@@ -862,7 +959,7 @@
     */
     priceStart=new OmegaNum(priceStart);
     priceRatio=new OmegaNum(priceRatio);
-    return priceStart.mul(priceRatio.pow(currentOwned)).mul(OmegaNum.sub(1, priceRatio.pow(numItems))).div(OmegaNum.sub(1, priceRatio));
+    return priceStart.mul(priceRatio.pow(currentOwned)).mul(OmegaNum.sub(OmegaNum.ONE, priceRatio.pow(numItems))).div(OmegaNum.sub(OmegaNum.ONE, priceRatio));
   };
   Q.sumArithmeticSeries = function (numItems, priceStart, priceAdd, currentOwned) {
     /*
@@ -876,7 +973,7 @@
     currentOwned=new OmegaNum(currentOwned);
     var actualStart = priceStart.add(currentOwned.mul(priceAdd));
 
-    return numItems.div(2).mul(actualStart.mul(2).plus(numItems.sub(1).mul(priceAdd)));
+    return numItems.div(2).mul(actualStart.mul(2).plus(numItems.sub(OmegaNum.ONE).mul(priceAdd)));
   };
   // Binomial Coefficients n choose k
   Q.choose = function (n, k) {
@@ -899,24 +996,26 @@
       if (typeof x.sign!="number") x.sign=Number(x.sign);
       x.sign=x.sign<0?-1:1;
     }
-    for (var i=0;i<x.array.length;i++){
+    for (var l=x.array.length,i=0;i<l;i++){
       var e=x.array[i];
+      if (e===null||e===undefined){
+        x.array[i]=0;
+        continue;
+      }
       if (isNaN(e)){
         x.array=[NaN];
         return x;
       }
-      if (e==Infinity){
+      if (!isFinite(e)){
         x.array=[Infinity];
         return x;
       }
-      if (e===null||e===undefined){
-        x.array[i]=0;
-      }
+      if (i!==0&&!Number.isInteger(e)) x.array[i]=Math.floor(e);
     }
     do{
       if (OmegaNum.debug>=OmegaNum.ALL) console.log(x.toString());
       b=false;
-      while (x.array.length&&x.array[x.array.length-1]==0){
+      while (x.array.length&&x.array[x.array.length-1]===0){
         x.array.pop();
         b=true;
       }
@@ -930,14 +1029,14 @@
         x.array[1]--;
         b=true;
       }
-      if (!x.array[1]&&x.array.length>2){
+      if (x.array.length>2&&!x.array[1]){
         for (i=2;!x.array[i];++i) continue;
         x.array[i-1]=x.array[0];
         x.array[0]=1;
         x.array[i]--;
         b=true;
       }
-      for (i=1;i<x.array.length;++i){
+      for (l=x.array.length,i=1;i<l;++i){
         if (x.array[i]>MAX_SAFE_INTEGER){
           x.array[i+1]=(x.array[i+1]||0)+1;
           x.array[0]=x.array[i]+1;
@@ -952,8 +1051,7 @@
   P.toNumber=function (){
     //console.log(this.array);
     if (this.sign==-1) return -1*this.abs();
-    if ((this.array[1]>=2)||((this.array[1]==1)&&(this.array[0]>Math.log10(2)*1024))) return Infinity;
-    for (var i=2;i<this.array.length;++i) if (this.array[i]) return Infinity;
+    if (this.array.length>=2&&(this.array[1]>=2||this.array[1]==1&&this.array[0]>Math.log10(Number.MAX_VALUE))) return Infinity;
     if (this.array[1]==1) return Math.pow(10,this.array[0]);
     return this.array[0];
   };
@@ -961,13 +1059,12 @@
     if (this.sign==-1) return "-"+this.abs();
     if (isNaN(this.array[0])) return "NaN";
     if (!isFinite(this.array[0])) return "Infinity";
-    var b=false;
     var s="";
     if (this.array.length>=2){
-      for (var i=2;i<this.array.length;++i){
+      for (var i=this.array.length-1;i>=2;--i){
         var q=i>=5?"{"+i+"}":"^".repeat(i);
-        if (this.array[i]>1) s="(10"+q+")^"+this.array[i]+" "+s;
-        else if (this.array[i]==1) s="10"+q+s;
+        if (this.array[i]>1) s+="(10"+q+")^"+this.array[i]+" ";
+        else if (this.array[i]==1) s+="10"+q;
       }
     }
     if (!this.array[1]) s+=String(this.toNumber());
@@ -976,19 +1073,85 @@
     else s+="(10^)^"+this.array[1]+" "+this.array[0];
     return s;
   };
+  //from break_eternity.js
+  var decimalPlaces=function decimalPlaces(value,places){
+    var len=places+1;
+    var numDigits=Math.ceil(Math.log10(Math.abs(value)));
+    var rounded=Math.round(value*Math.pow(10,len-numDigits))*Math.pow(10,numDigits-len);
+    return parseFloat(rounded.toFixed(Math.max(len-numDigits,0)));
+  };
+  P.toStringWithDecimalPlaces=function (places,applyToOpNums){
+    if (this.sign==-1) return "-"+this.abs();
+    if (isNaN(this.array[0])) return "NaN";
+    if (!isFinite(this.array[0])) return "Infinity";
+    var b=0;
+    var s="";
+    var m=Math.pow(10,places);
+    if (this.array.length>=2){
+      for (var i=this.array.length-1;!b&&i>=2;--i){
+        var x=this.array[i];
+        if (applyToOpNums&&x>=m){
+          ++i;
+          b=x;
+          x=1;
+        }else if (applyToOpNums&&this.array[i-1]>=m){
+          ++x;
+          b=this.array[i-1];
+        }
+        var q=i>=5?"{"+i+"}":"^".repeat(i);
+        if (x>1) s+="(10"+q+")^"+x+" ";
+        else if (x==1) s+="10"+q;
+      }
+    }
+    var k=this.array[0];
+    var l=this.array[1]||0;
+    if (k>m){
+      k=Math.log10(k);
+      ++l;
+    }
+    if (b) s+=decimalPlaces(b,places);
+    else if (!l) s+=String(decimalPlaces(k,places));
+    else if (l<3) s+="e".repeat(l-1)+decimalPlaces(Math.pow(10,k-Math.floor(k)),places)+"e"+decimalPlaces(Math.floor(k),places);
+    else if (l<8) s+="e".repeat(l)+decimalPlaces(k,places);
+    else if (applyToOpNums) s+="(10^)^"+decimalPlaces(l,places)+" "+decimalPlaces(k,places);
+    else s+="(10^)^"+l+" "+decimalPlaces(k,places);
+    return s;
+  };
+  //these are from break_eternity.js as well
+  P.toExponential=function (places,applyToOpNums){
+    if (this.array.length==1) return (this.sign*this.array[0]).toExponential(places);
+    return this.toStringWithDecimalPlaces(places,applyToOpNums);
+  };
+  P.toFixed=function (places,applyToOpNums){
+    if (this.array.length==1) return (this.sign*this.array[0]).toFixed(places);
+    return this.toStringWithDecimalPlaces(places,applyToOpNums);
+  };
+  P.toPrecision=function (places,applyToOpNums){
+    if (this.array[0]===0) return (this.sign*this.array[0]).toFixed(places-1,applyToOpNums);
+    if (this.array.length==1&&this.array[0]<1e-6) return this.toExponential(places-1,applyToOpNums);
+    if (this.array.length==1&&places>Math.log10(this.array[0])) return this.toFixed(places-Math.floor(Math.log10(this.array[0]))-1,applyToOpNums);
+    return this.toExponential(places-1,applyToOpNums);
+  };
+  P.valueOf=function (){
+    return this.toString();
+  };
   //Note: toArray() would be impossible without changing the layout of the array or lose the information about the sign
   P.toJSON=function (){
-    return {
-      array:this.array.slice(0),
-      sign:this.sign
-    };
+    if (OmegaNum.serializeMode==OmegaNum.JSON){
+      return {
+        array:this.array.slice(0),
+        sign:this.sign
+      };
+    }else if (OmegaNum.serializeMode==OmegaNum.STRING){
+      return this.toString();
+    }
   };
   P.toHyperE=function (){
     if (this.sign==-1) return "-"+this.abs().toHyperE();
     if (isNaN(this.array[0])) return "NaN";
     if (!isFinite(this.array[0])) return "Infinity";
-    if (this.lt(MAX_SAFE_INTEGER)) return String(this.array[0]);
-    if (this.lt("e"+MAX_SAFE_INTEGER)) return "E"+this.array[0];
+    if (this.lt(OmegaNum.MAX_SAFE_INTEGER)) return String(this.array[0]);
+    if (this.lt(OmegaNum.E_MAX_SAFE_INTEGER)) return "E"+this.array[0];
     var r="E"+this.array[0]+"#"+this.array[1];
     for (var i=2;i<this.array.length;++i){
       r+="#"+(this.array[i]+1);
@@ -1151,6 +1314,7 @@
   };
   Q.fromObject=function (input){
     if (typeof input!="object") throw Error(invalidArgument+"Expected Object");
+    if (input===null) return OmegaNum.ZERO.clone();
     if (input instanceof Array) return OmegaNum.fromArray(input);
     if (input instanceof OmegaNum) return new OmegaNum(input);
     if (!(input.array instanceof Array)) throw Error(invalidArgument+"Expected that property 'array' exists");
@@ -1162,6 +1326,7 @@
     return x;
   };
   Q.fromJSON=function (input){
+    if (typeof input=="object") return OmegaNum.fromObject(parsedObject);
     if (typeof input!="string") throw Error(invalidArgument+"Expected String");
     var parsedObject,x;
     try{
@@ -1213,7 +1378,10 @@
     return x;
   };
   P.clone=function (){
-    return new OmegaNum(this);
+    var temp=new OmegaNum();
+    temp.array=this.array.slice(0);
+    temp.sign=this.sign;
+    return temp;
   };
   // OmegaNum methods
 
@@ -1271,15 +1439,8 @@
     }
     OmegaNum.prototype = P;
 
-    OmegaNum.ROUND_UP = 0;
-    OmegaNum.ROUND_DOWN = 1;
-    OmegaNum.ROUND_CEIL = 2;
-    OmegaNum.ROUND_FLOOR = 3;
-    OmegaNum.ROUND_HALF_UP = 4;
-    OmegaNum.ROUND_HALF_DOWN = 5;
-    OmegaNum.ROUND_HALF_EVEN = 6;
-    OmegaNum.ROUND_HALF_CEIL = 7;
-    OmegaNum.ROUND_HALF_FLOOR = 8;
+    OmegaNum.JSON = 0;
+    OmegaNum.STRING = 1;
     
     OmegaNum.NONE = 0;
     OmegaNum.NORMAL = 1;
@@ -1287,11 +1448,17 @@
 
     OmegaNum.clone=clone;
     OmegaNum.config=OmegaNum.set=config;
-    OmegaNum=Object.assign(OmegaNum,Q);
+    
+    //OmegaNum=Object.assign(OmegaNum,Q);
+    for (var prop in Q){
+      if (Q.hasOwnProperty(prop)){
+        OmegaNum[prop]=Q[prop];
+      }
+    }
     
     if (obj === void 0) obj = {};
     if (obj) {
-      ps = ['rounding', 'maxArrow', 'debug'];
+      ps = ['maxArrow', 'serializeMode', 'debug'];
       for (i = 0; i < ps.length;) if (!obj.hasOwnProperty(p = ps[i++])) obj[p] = this[p];
     }
 
@@ -1300,6 +1467,23 @@
     return OmegaNum;
   }
 
+  function defineConstants(obj){
+    for (var prop in R){
+      if (R.hasOwnProperty(prop)){
+        if (Object.defineProperty){
+          Object.defineProperty(obj,prop,{
+            configurable: false,
+            enumerable: true,
+            writable: false,
+            value: new OmegaNum(R[prop])
+          });
+        }else{
+          obj[prop]=new OmegaNum(R[prop]);
+        }
+      }
+    }
+    return obj;
+  }
 
   /*
    * Configure global settings for a OmegaNum constructor.
@@ -1320,8 +1504,8 @@
     }
     var i,p,v,
       ps = [
-        'rounding',0,8,
         'maxArrow',1,Number.MAX_SAFE_INTEGER,
+        'serializeMode',0,1,
         'debug',0,2
       ];
     for (i = 0; i < ps.length; i += 3) {
@@ -1337,6 +1521,8 @@
 
   // Create and configure initial OmegaNum constructor.
   OmegaNum=clone(OmegaNum);
+
+  OmegaNum=defineConstants(OmegaNum);
 
   OmegaNum['default']=OmegaNum.OmegaNum=OmegaNum;
 
